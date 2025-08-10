@@ -33,7 +33,7 @@
         <p class="text-gray-500 mb-6">Vui lòng chọn tên và nhập mật khẩu.</p>
         <div class="space-y-4">
             <select id="user-select" class="w-full p-3 border border-gray-300 rounded-lg">
-                <option value="">-- Đang tải danh sách... --</option>
+                <option value="">-- Chọn tài khoản --</option>
             </select>
             <input type="password" id="password-input" class="w-full p-3 border border-gray-300 rounded-lg" placeholder="Mật khẩu">
             <button id="login-btn" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors" disabled>Đăng Nhập</button>
@@ -147,8 +147,8 @@
             useMock = true;
         }
 
-        // --- MOCK USER DATABASE (for preview) ---
-        const mockUserDatabase = {
+        // --- USER DATABASE ---
+        const userDatabase = {
             'phu': { name: 'Quản Lí Phú', phone: '0984843434', role: 'manager', employeeId: 'manager-phu', password: 'phuoc114118' },
             'phuoc': { name: 'Quản Lí Phước', phone: '0971234972', role: 'manager', employeeId: 'manager-phuoc', password: 'phu114118' },
             'truong': { name: 'Nhân Viên Sale Trường', phone: '0906284106', role: 'employee', employeeId: 'sale-truong', password: 'truong114' },
@@ -181,8 +181,7 @@
         let currentWeekString = getWeekStringForDate(new Date());
         let currentUserProfile = null;
         let unsubscribes = [];
-        let userDatabase = {};
-
+        
         // --- UI Elements ---
         const views = document.querySelectorAll('.view');
         const userSelect = document.getElementById('user-select');
@@ -455,13 +454,13 @@
              const tasks = docSnap.exists() ? docSnap.data().tasks : getInitialPlan()[currentDay];
              
              if (targetView === 'app-view') {
-                renderTasks(tasks, false);
+                renderTasks(tasks, false, employeeProfile);
              } else {
-                renderTasks(tasks, true);
+                renderTasks(tasks, true, employeeProfile);
              }
         }
 
-        function renderTasks(tasks, isManagerViewing) {
+        function renderTasks(tasks, isManagerViewing, employeeProfile) {
             const selector = isManagerViewing ? '#manager-employee-detail-view #manager-detail-task-table' : '#app-view #task-table tbody';
             const taskTableBody = document.querySelector(selector);
             
@@ -472,7 +471,8 @@
             taskTableBody.innerHTML = '';
             if (!tasks) return;
             
-            const celebrationKey = `${isManagerViewing ? employeeProfile.employeeId : currentUserProfile.employeeId}-${currentWeekString}-${currentDay}`;
+            const currentProfile = isManagerViewing ? employeeProfile : currentUserProfile;
+            const celebrationKey = `${currentProfile.employeeId}-${currentWeekString}-${currentDay}`;
             const celebrationStatus = JSON.parse(localStorage.getItem('celebrations') || '{}');
 
             tasks.forEach((task, index) => {
