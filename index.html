@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Checklist Đội Nhóm</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Be Vietnam Pro', sans-serif; background-color: #f4f7f6; }
+        .completed-task { text-decoration: line-through; color: #9ca3af; }
+        .progress-bar-fill { transition: width 0.5s ease-in-out, background-color 0.5s ease-in-out; }
+        .custom-checkbox { -webkit-appearance: none; appearance: none; background-color: #fff; margin: 0; font: inherit; color: currentColor; width: 1.25em; height: 1.25em; border: 0.15em solid #cbd5e1; border-radius: 0.25em; transform: translateY(-0.075em); display: grid; place-content: center; cursor: pointer; }
+        .custom-checkbox:checked { border-color: #4f46e5; }
+        .custom-checkbox::before { content: ""; width: 0.65em; height: 0.65em; transform: scale(0); transition: 120ms transform ease-in-out; box-shadow: inset 1em 1em #4f46e5; transform-origin: bottom left; clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%); }
+        .custom-checkbox:checked::before { transform: scale(1); }
+        #confetti-canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 9999; }
+        textarea { resize: vertical; }
+        .view { display: none; }
+        .view.active { display: block; }
+        .dashboard-row:hover { background-color: #f9fafb; cursor: pointer; }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <canvas id="confetti-canvas"></canvas>
+
+    <!-- Login View -->
+    <div id="login-view" class="view active max-w-md mx-auto text-center bg-white p-8 rounded-2xl shadow-lg">
+        <h1 class="text-2xl font-bold text-gray-800 mb-2">Đăng Nhập</h1>
+        <p class="text-gray-500 mb-6">Vui lòng chọn tên và nhập mật khẩu.</p>
+        <div class="space-y-4">
+            <select id="user-select" class="w-full p-3 border border-gray-300 rounded-lg">
+                <option value="">-- Đang tải danh sách... --</option>
+            </select>
+            <input type="password" id="password-input" class="w-full p-3 border border-gray-300 rounded-lg" placeholder="Mật khẩu">
+            <button id="login-btn" class="w-full bg-indigo-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-indigo-700 transition-colors" disabled>Đăng Nhập</button>
+        </div>
+        <p id="login-error" class="text-red-500 text-sm mt-4"></p>
+    </div>
+
+    <!-- Main App View (Checklist for Employee) -->
+    <div id="app-view" class="view max-w-7xl mx-auto">
+        <div class="bg-white rounded-2xl shadow-lg p-6 md:p-8">
+            <div class="flex flex-col md:flex-row justify-between md:items-center mb-6 gap-4">
+                <div>
+                    <h1 id="main-title" class="text-2xl md:text-3xl font-bold text-gray-800">Checklist Công Việc Tuần</h1>
+                    <p id="user-greeting" class="text-gray-500 mt-1">Kế hoạch làm việc của bạn.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="prev-week-btn" class="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors">&lt;</button>
+                    <input type="week" id="week-selector" class="p-2 border border-gray-300 rounded-lg bg-white">
+                    <button id="next-week-btn" class="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors">&gt;</button>
+                    <button id="logout-btn" class="text-sm bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 ml-4">Đăng Xuất</button>
+                </div>
+            </div>
+            <div id="day-selector" class="flex flex-wrap gap-2 mb-6 border-b border-gray-200 pb-4"></div>
+            <div class="mb-6">
+                <div class="flex justify-between items-center mb-2">
+                    <span id="progress-label" class="text-sm font-medium text-gray-600">Tiến độ ngày</span>
+                    <span id="progress-text" class="text-sm font-bold text-indigo-600">0%</span>
+                </div>
+                <div class="w-full bg-gray-200 rounded-full h-2.5"><div id="progress-bar" class="bg-indigo-600 h-2.5 rounded-full progress-bar-fill" style="width: 0%"></div></div>
+            </div>
+            <div class="overflow-x-auto">
+                <table id="task-table" class="w-full text-sm text-left text-gray-600">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-100 rounded-t-lg">
+                        <tr>
+                            <th scope="col" class="px-4 py-3 w-28">Thời gian</th>
+                            <th scope="col" class="px-4 py-3">Công việc</th>
+                            <th scope="col" class="px-4 py-3 w-56">Mô tả</th>
+                            <th scope="col" class="px-4 py-3 w-32">Nền tảng</th>
+                            <th scope="col" class="px-4 py-3 w-48">Link Bài Đăng</th>
+                            <th scope="col" class="px-4 py-3 w-24 text-center">Hoàn thành</th>
+                            <th scope="col" class="px-4 py-3 w-16 text-center">Xóa</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="mt-4">
+                <button id="add-task-btn" class="bg-indigo-500 text-white px-4 py-2 rounded-lg hover:bg-indigo-600 text-sm">Thêm Công Việc</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manager View -->
+    <div id="manager-view" class="view max-w-7xl mx-auto space-y-8">
+         <div id="manager-dashboard-container" class="bg-white rounded-2xl shadow-lg p-6 md:p-8">
+            <div class="flex flex-col md:flex-row justify-between md:items-center mb-6 gap-4">
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Bảng Quản Lý Tiến Độ</h1>
+                    <p id="manager-greeting" class="text-gray-500 mt-1">Xin chào! Chọn một nhân viên để xem chi tiết.</p>
+                </div>
+                 <div class="flex items-center gap-2">
+                    <button id="manager-prev-week-btn" class="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors">&lt;</button>
+                    <input type="week" id="manager-week-selector" class="p-2 border border-gray-300 rounded-lg bg-white">
+                    <button id="manager-next-week-btn" class="px-3 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors">&gt;</button>
+                    <button id="manager-logout-btn" class="text-sm bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 ml-4">Đăng Xuất</button>
+                </div>
+            </div>
+            <div id="dashboard-content" class="overflow-x-auto"></div>
+        </div>
+        <div id="activity-log-container" class="bg-white rounded-2xl shadow-lg p-6 md:p-8">
+            <h2 class="text-xl font-bold text-gray-800 mb-4">Nhật Ký Hoạt Động Gần Đây</h2>
+            <div id="activity-log-content" class="space-y-3 max-h-96 overflow-y-auto">
+                <p class="text-gray-500">Chưa có hoạt động nào.</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="manager-employee-detail-view" class="view max-w-7xl mx-auto">
+        <!-- Content will be injected here -->
+    </div>
+
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, addDoc, query, orderBy, limit, getDocs, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- FIREBASE CONFIG ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyBckLsbtrhSiffFuex61V0RKDhDXDwRt5Y",
+          authDomain: "quan-ly-checklist.firebaseapp.com",
+          projectId: "quan-ly-checklist",
+          storageBucket: "quan-ly-checklist.appspot.com",
+          messagingSenderId: "1065868341343",
+          appId: "1:1065868341343:web:d38fb5fcb3a2f35cd66bea",
+          measurementId: "G-TSR0X8334B"
+        };
+        
+        let db;
+        let useMock = true;
+        try {
+            if (firebaseConfig.projectId && firebaseConfig.projectId !== 'YOUR_PROJECT_ID') {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                useMock = false;
+                console.log("Firebase initialized successfully!");
+            } else {
+                 console.warn("Firebase config is not set. Using mock data.");
+            }
+        } catch (e) {
+            console.error("Firebase initialization failed:", e);
+            useMock = true;
+        }
+
+        // --- MOCK USER DATABASE (for preview) ---
+        const mockUserDatabase = {
+            'phu': { name: 'Quản Lí Phú', phone: '0984843434', role: 'manager', employeeId: 'manager-phu', password: 'phuoc114118' },
+            'phuoc': { name: 'Quản Lí Phước', phone: '0971234972', role: 'manager', employeeId: 'manager-phuoc', password: 'phu114118' },
+            'truong': { name: 'Nhân Viên Sale Trường', phone: '0906284106', role: 'employee', employeeId: 'sale-truong', password: 'truong114' },
+            'long': { name: 'Nhân Viên Sale Long', phone: '0707891617', role: 'employee', employeeId: 'sale-long', password: 'long118' },
+            'sale-3': { name: 'Nhân viên Sale 3', phone: '0000000003', role: 'employee', employeeId: 'sale-3', password: '123' },
+            'sale-4': { name: 'Nhân viên Sale 4', phone: '0000000004', role: 'employee', employeeId: 'sale-4', password: '123' },
+            'sale-5': { name: 'Nhân viên Sale 5', phone: '0000000005', role: 'employee', employeeId: 'sale-5', password: '123' },
+        };
+
+        // --- MOCK DATABASE ---
+        const mockDb = { tasks: {}, activityLogs: [] };
+        async function mockSetDoc(path, data) {
+            const [ , employeeId, week, day] = path;
+            if (!mockDb.tasks[employeeId]) mockDb.tasks[employeeId] = {};
+            if (!mockDb.tasks[employeeId][week]) mockDb.tasks[employeeId][week] = {};
+            mockDb.tasks[employeeId][week][day] = data;
+        }
+        async function mockGetDoc(path) {
+            const [ , employeeId, week, day] = path;
+            const data = mockDb.tasks[employeeId]?.[week]?.[day];
+            return { exists: () => !!data, data: () => data };
+        }
+        async function mockAddDoc(path, data) {
+             mockDb.activityLogs.unshift(data);
+        }
+        
+        // --- APPLICATION STATE ---
+        const days = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
+        let currentDay = days[0];
+        let currentWeekString = getWeekStringForDate(new Date());
+        let currentUserProfile = null;
+        let unsubscribes = [];
+        let userDatabase = {};
+
+        // --- UI Elements ---
+        const views = document.querySelectorAll('.view');
+        const userSelect = document.getElementById('user-select');
+        const passwordInput = document.getElementById('password-input');
+        const loginBtn = document.getElementById('login-btn');
+        const loginError = document.getElementById('login-error');
+        const userGreeting = document.getElementById('user-greeting');
+        const managerGreeting = document.getElementById('manager-greeting');
+        const myCanvas = document.getElementById('confetti-canvas');
+        const myConfetti = confetti.create(myCanvas, { resize: true });
+        
+        // --- DATE & WEEK HELPERS ---
+        function getWeekStringForDate(date) {
+            const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+            d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+            const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+            const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+            return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+        }
+        function getDateFromWeekString(weekString) {
+            const [year, week] = weekString.split('-W').map(Number);
+            const simple = new Date(year, 0, 1 + (week - 1) * 7);
+            const dow = simple.getDay();
+            const ISOweekStart = simple;
+            if (dow <= 4) ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+            else ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+            return ISOweekStart;
+        }
+        
+        // --- Initial Plan Template ---
+        function getInitialPlan() {
+            const plan = {
+                'Thứ 2': [
+                    { time: '08:30-09:00', task: 'Đăng 1 bài Sản Phẩm', platform: 'Fanpage, FB, Zalo', done: false, link: '', description: '' },
+                    { time: '08:30-09:00', task: 'Đăng 1 SP lên trang Shopee', platform: 'Shopee', done: false, link: '', description: '' },
+                    { time: '09:00-10:00', task: 'HỌP TỔNG KẾT TUẦN', platform: 'N/A', done: false, link: '', description: '' },
+                    { time: '10:00-11:30', task: 'Kết bạn FB (100 KH) & tương tác', platform: 'Facebook', done: false, link: '', description: '' },
+                    { time: '10:00-11:30', task: 'Lấy 30 SĐT & kết bạn Zalo', platform: 'Zalo', done: false, link: '', description: '' },
+                    { time: '10:30-10:45', task: 'Đăng bài kiến thức ô tô', platform: 'Fanpage, FB, Zalo', done: false, link: '', description: '' },
+                    { time: '11:30-12:15', task: 'Gọi 10 KH Cũ hỏi thăm & nhờ giới thiệu', platform: 'Điện thoại', done: false, link: '', description: '' },
+                    { time: '12:15-12:30', task: 'Đăng bài Giải Trí', platform: 'Fanpage, FB, Zalo', done: false, link: '', description: '' },
+                    { time: '12:15-12:30', task: 'Đăng 1 SP lên trang Shopee', platform: 'Shopee', done: false, link: '', description: '' },
+                    { time: '12:30-13:30', task: 'Ăn uống & Nghỉ trưa', platform: 'N/A', done: false, link: '', description: '' },
+                    { time: '13:30-15:00', task: 'Chạy quảng cáo', platform: 'Facebook Ads', done: false, link: '', description: '' },
+                    { time: '15:00-15:30', task: 'Đăng bài Giải Trí', platform: 'Fanpage, FB, Zalo', done: false, link: '', description: '' },
+                    { time: '15:00-15:30', task: 'Đăng 1 SP lên trang Shopee', platform: 'Shopee', done: false, link: '', description: '' },
+                    { time: '15:30-17:15', task: 'Học hỏi kiến thức về lốp ô tô', platform: 'Online/Offline', done: false, link: '', description: '' },
+                    { time: '17:15-17:30', task: 'TỔNG KẾT BÁO CÁO', platform: 'N/A', done: false, link: '', description: '' },
+                ],
+                'Thứ 3': [
+                    { time: '08:30-09:00', task: 'Đăng bài về Sản Phẩm', platform: 'Fanpage, FB, Zalo', done: false, link: '', description: '' },
+                    { time: '08:30-09:00', task: 'Đăng 1 SP lên trang Shopee', platform: 'Shopee', done: false, link: '', description: '' },
+                    { time: '09:00-09:30', task: 'Tham gia 10 Group ô tô & đăng SP', platform: 'Facebook Groups', done: false, link: '', description: '' },
+                    { time: '09:30-11:30', task: 'Livestream bán hàng', platform: 'Tiktok + Facebook', done: false, link: '', description: '' },
+                    { time: '11:30-12:15', task: 'Quay & dựng 1 video ngắn', platform: 'Offline', done: false, link: '', description: '' },
+                    { time: '12:15-12:30', task: 'Đăng video vừa tạo', platform: 'Tiktok, Fanpage, Zalo', done: false, link: '', description: '' },
+                    { time: '12:30-13:30', task: 'Ăn uống & nghỉ trưa', platform: 'N/A', done: false, link: '', description: '' },
+                    { time: '13:30-15:00', task: 'Kết bạn FB (100 KH) & tương tác', platform: 'Facebook', done: false, link: '', description: '' },
+                    { time: '13:30-15:00', task: 'Lấy 30 SĐT & kết bạn Zalo', platform: 'Zalo', done: false, link: '', description: '' },
+                    { time: '15:00-15:30', task: 'Đăng bài giải trí/tương tác', platform: 'Fanpage, FB, Zalo', done: false, link: '', description: '' },
+                    { time: '15:00-15:30', task: 'Đăng 1 SP lên trang Shopee', platform: 'Shopee', done: false, link: '', description: '' },
+                    { time: '15:30-16:45', task: 'Gọi 10 KH cũ hỏi thăm & xin giới thiệu', platform: 'Điện thoại', done: false, link: '', description: '' },
+                    { time: '16:45-17:15', task: 'Đăng bài kiến thức/chia sẻ', platform: 'Fanpage, FB, Zalo', done: false, link: '', description: '' },
+                    { time: '17:15-17:30', task: 'Tổng kết công việc & báo cáo', platform: 'N/A', done: false, link: '', description: '' },
+                ],
+                 'Thứ 7': [
+                    { time: '08:30-09:00', task: 'Đăng 1 bài Sản Phẩm', platform: 'Fanpage, FB, Zalo', done: false, link: '', description: '' },
+                    { time: '08:30-09:00', task: 'Đăng 1 SP lên trang Shopee', platform: 'Shopee', done: false, link: '', description: '' },
+                    { time: '09:00-11:30', task: 'Chạy quảng cáo', platform: 'Facebook Ads', done: false, link: '', description: '' },
+                    { time: '11:30-12:15', task: 'Quay dựng 1 clips tiktok', platform: 'Offline', done: false, link: '', description: '' },
+                    { time: '12:15-12:30', task: 'Đăng 1 Clips tiktok vừa dựng', platform: 'Tiktok, Fanpage, Zalo', done: false, link: '', description: '' },
+                    { time: '12:30-13:30', task: 'Ăn uống & Nghỉ trưa', platform: 'N/A', done: false, link: '', description: '' },
+                    { time: '13:30-15:00', task: 'Kết bạn FB (100 KH) & tương tác', platform: 'Facebook', done: false, link: '', description: '' },
+                    { time: '13:30-15:00', task: 'Lấy được 30 SDT và kết bạn Zalo', platform: 'Zalo', done: false, link: '', description: '' },
+                    { time: '15:00-15:30', task: 'Đăng bài Giải Trí', platform: 'Fanpage, FB, Zalo', done: false, link: '', description: '' },
+                    { time: '15:00-15:30', task: 'Đăng 1 SP lên trang Shopee', platform: 'Shopee', done: false, link: '', description: '' },
+                    { time: '15:30-16:45', task: 'Gọi 10 KH Cũ & nhờ giới thiệu', platform: 'Điện thoại', done: false, link: '', description: '' },
+                    { time: '16:45-17:15', task: 'Đăng bài Giải Trí/SP', platform: 'Fanpage, FB, Zalo', done: false, link: '', description: '' },
+                    { time: '17:15-17:30', task: 'TỔNG KẾT BÁO CÁO', platform: 'N/A', done: false, link: '', description: '' },
+                ]
+            };
+            plan['Thứ 4'] = JSON.parse(JSON.stringify(plan['Thứ 3']));
+            plan['Thứ 5'] = JSON.parse(JSON.stringify(plan['Thứ 3']));
+            plan['Thứ 6'] = JSON.parse(JSON.stringify(plan['Thứ 3']));
+            return plan;
+        }
+        
+        // --- View Switching & Cleanup ---
+        function showView(viewId) {
+            views.forEach(view => view.classList.toggle('active', view.id === viewId));
+        }
+
+        // --- LOGIN/LOGOUT LOGIC ---
+        async function populateLoginDropdown() {
+            userSelect.innerHTML = '<option value="">-- Chọn tài khoản --</option>';
+            if (useMock) {
+                userDatabase = mockUserDatabase;
+            } else {
+                try {
+                    const usersCol = collection(db, "users");
+                    const userSnapshot = await getDocs(usersCol);
+                    userDatabase = {};
+                    userSnapshot.forEach((doc) => {
+                        userDatabase[doc.id] = doc.data();
+                    });
+                } catch (error) {
+                    console.error("Error fetching users:", error);
+                    loginError.textContent = "Lỗi tải danh sách người dùng.";
+                    userDatabase = mockUserDatabase; // Fallback to mock
+                }
+            }
+
+            for (const key in userDatabase) {
+                const user = userDatabase[key];
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = `${user.name} (${user.role === 'manager' ? 'Quản lí' : 'Nhân viên'})`;
+                userSelect.appendChild(option);
+            }
+        }
+
+        function handleLogin() {
+            const selectedUserId = userSelect.value;
+            const enteredPassword = passwordInput.value;
+            loginError.textContent = '';
+
+            if (!selectedUserId) return;
+            
+            const user = userDatabase[selectedUserId];
+            if (user && user.password === enteredPassword) {
+                currentUserProfile = user;
+                updateWeekSelectors(currentWeekString);
+                if (currentUserProfile.role === 'manager') {
+                    managerGreeting.textContent = `Xin chào, ${currentUserProfile.name}!`;
+                    loadManagerDashboard();
+                    showView('manager-view');
+                } else {
+                    userGreeting.textContent = `Kế hoạch của ${currentUserProfile.name}.`;
+                    loadChecklistForCurrentUser();
+                    showView('app-view');
+                }
+            } else {
+                loginError.textContent = 'Mật khẩu không chính xác.';
+            }
+        }
+
+        function handleLogout() {
+            unsubscribes.forEach(unsub => unsub());
+            unsubscribes = [];
+            currentUserProfile = null;
+            userSelect.value = '';
+            passwordInput.value = '';
+            loginBtn.disabled = true;
+            showView('login-view');
+        }
+
+        // --- EVENT LISTENERS ---
+        function setupGlobalEventListeners() {
+            userSelect.addEventListener('change', () => {
+                loginBtn.disabled = !userSelect.value;
+            });
+            loginBtn.addEventListener('click', handleLogin);
+            document.getElementById('logout-btn').addEventListener('click', handleLogout);
+            document.getElementById('manager-logout-btn').addEventListener('click', handleLogout);
+        
+            const weekNavs = [
+                { selector: '#week-selector', prev: '#prev-week-btn', next: '#next-week-btn', scope: 'employee' },
+                { selector: '#manager-week-selector', prev: '#manager-prev-week-btn', next: '#manager-next-week-btn', scope: 'manager' }
+            ];
+            weekNavs.forEach(nav => {
+                document.querySelector(nav.selector).addEventListener('change', (e) => handleWeekChange(e.target.value, nav.scope));
+                document.querySelector(nav.prev).addEventListener('click', () => changeWeek(-1, nav.scope));
+                document.querySelector(nav.next).addEventListener('click', () => changeWeek(1, nav.scope));
+            });
+            document.getElementById('add-task-btn').addEventListener('click', handleAddTask);
+        }
+        
+        // --- Week Change Logic ---
+        function handleWeekChange(newWeek, scope) {
+            if (newWeek === currentWeekString) return;
+            currentWeekString = newWeek;
+            updateWeekSelectors(newWeek);
+            reloadDataForNewWeek(scope);
+        }
+        function changeWeek(direction, scope) {
+            const currentDate = getDateFromWeekString(currentWeekString);
+            currentDate.setDate(currentDate.getDate() + (7 * direction));
+            handleWeekChange(getWeekStringForDate(currentDate), scope);
+        }
+        function updateWeekSelectors(weekValue) {
+            document.getElementById('week-selector').value = weekValue;
+            document.getElementById('manager-week-selector').value = weekValue;
+        }
+        function reloadDataForNewWeek(scope) {
+            unsubscribes.forEach(unsub => unsub());
+            unsubscribes = [];
+            if (scope === 'manager' || (currentUserProfile && currentUserProfile.role === 'manager')) {
+                loadManagerDashboard();
+            } else if (currentUserProfile) {
+                loadChecklistForCurrentUser();
+            }
+        }
+
+        // --- LOGGING ---
+        async function logActivity(action, taskDetails) {
+            const log = {
+                timestamp: new Date().toISOString(),
+                employeeId: currentUserProfile.employeeId,
+                employeeName: currentUserProfile.name,
+                action: action,
+                task: taskDetails,
+                week: currentWeekString,
+                day: currentDay
+            };
+            if(useMock) {
+                await mockAddDoc(null, log);
+            } else {
+                await addDoc(collection(db, "activityLogs"), log);
+            }
+        }
+
+        // --- CRUD ---
+        async function handleAddTask() {
+            const path = ["tasks", currentUserProfile.employeeId, currentWeekString, currentDay];
+            let docSnap;
+            if (useMock) docSnap = await mockGetDoc(path);
+            else docSnap = await getDoc(doc(db, ...path));
+            
+            const tasks = docSnap.exists() ? docSnap.data().tasks : getInitialPlan()[currentDay];
+            const newTask = { time: 'N/A', task: 'Công việc mới', platform: 'N/A', done: false, link: '', description: '' };
+            tasks.push(newTask);
+            await saveTasks(tasks);
+            await logActivity('thêm', 'Công việc mới');
+            renderTasks(tasks, false);
+        }
+
+        async function handleDeleteTask(index, tasks) {
+            const deletedTask = tasks[index];
+            tasks.splice(index, 1);
+            await saveTasks(tasks);
+            await logActivity('xóa', `"${deletedTask.task}"`);
+            renderTasks(tasks, false);
+        }
+
+        // --- Checklist & Dashboard Logic ---
+        async function loadChecklistForCurrentUser() {
+            const daySelectorContainer = document.getElementById('day-selector');
+            daySelectorContainer.innerHTML = '';
+            days.forEach(day => {
+                const button = document.createElement('button');
+                button.textContent = day;
+                button.dataset.day = day;
+                button.className = 'px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200';
+                daySelectorContainer.appendChild(button);
+                button.addEventListener('click', () => {
+                    currentDay = day;
+                    updateActiveButtonState();
+                    fetchAndRenderTasks(currentUserProfile, 'app-view');
+                });
+            });
+            updateActiveButtonState();
+            await fetchAndRenderTasks(currentUserProfile, 'app-view');
+        }
+
+        async function fetchAndRenderTasks(employeeProfile = currentUserProfile, targetView = 'app-view') {
+             const path = ["tasks", employeeProfile.employeeId, currentWeekString, currentDay];
+             let docSnap;
+             if (useMock) docSnap = await mockGetDoc(path);
+             else docSnap = await getDoc(doc(db, ...path));
+             const tasks = docSnap.exists() ? docSnap.data().tasks : getInitialPlan()[currentDay];
+             
+             if (targetView === 'app-view') {
+                renderTasks(tasks, false);
+             } else {
+                renderTasks(tasks, true);
+             }
+        }
+
+        function renderTasks(tasks, isManagerViewing) {
+            const selector = isManagerViewing ? '#manager-employee-detail-view #manager-detail-task-table' : '#app-view #task-table tbody';
+            const taskTableBody = document.querySelector(selector);
+            
+            if (!taskTableBody) {
+                console.error("Could not find the task table body element with selector:", selector);
+                return;
+            }
+            taskTableBody.innerHTML = '';
+            if (!tasks) return;
+            
+            const celebrationKey = `${isManagerViewing ? employeeProfile.employeeId : currentUserProfile.employeeId}-${currentWeekString}-${currentDay}`;
+            const celebrationStatus = JSON.parse(localStorage.getItem('celebrations') || '{}');
+
+            tasks.forEach((task, index) => {
+                const row = document.createElement('tr');
+                row.className = 'bg-white border-b hover:bg-gray-50 align-top';
+                const linkInputHTML = `<input type="url" placeholder="Dán link..." class="link-input w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg p-2" value="${task.link || ''}" data-index="${index}" ${isManagerViewing ? 'readonly' : ''}>`;
+                const deleteButtonHTML = isManagerViewing ? '' : `<td class="px-4 py-3 text-center"><button class="delete-task-btn text-red-500 hover:text-red-700" data-index="${index}">🗑️</button></td>`;
+                
+                row.innerHTML = `
+                    <td class="px-4 py-3"><input value="${task.time}" class="w-full bg-gray-50 p-2 rounded-lg border border-gray-300" data-field="time" data-index="${index}" ${isManagerViewing ? 'readonly' : ''}></td>
+                    <td class="px-4 py-3"><input value="${task.task}" class="w-full bg-gray-50 p-2 rounded-lg border border-gray-300" data-field="task" data-index="${index}" ${isManagerViewing ? 'readonly' : ''}></td>
+                    <td class="px-4 py-3"><textarea placeholder="Ghi chú..." class="description-input w-full bg-gray-50 border border-gray-300 text-sm rounded-lg p-2" rows="1" data-index="${index}" ${isManagerViewing ? 'readonly' : ''}>${task.description || ''}</textarea></td>
+                    <td class="px-4 py-3"><input value="${task.platform}" class="w-full bg-gray-50 p-2 rounded-lg border border-gray-300" data-field="platform" data-index="${index}" ${isManagerViewing ? 'readonly' : ''}></td>
+                    <td class="px-4 py-3">${linkInputHTML}</td>
+                    <td class="px-4 py-3 text-center"><input type="checkbox" class="custom-checkbox" data-index="${index}" ${task.done ? 'checked' : ''} ${isManagerViewing ? 'disabled' : ''}></td>
+                    ${deleteButtonHTML}
+                `;
+                taskTableBody.appendChild(row);
+            });
+            
+            if (!isManagerViewing) {
+                updateProgress(tasks, celebrationKey, celebrationStatus);
+                addTaskListeners(tasks, celebrationKey, celebrationStatus);
+            }
+        }
+
+        function addTaskListeners(tasks, celebrationKey, celebrationStatus) {
+            const taskContainer = document.getElementById('app-view');
+            taskContainer.querySelectorAll('input[data-field], textarea.description-input, input.link-input, input.custom-checkbox').forEach(el => {
+                el.addEventListener('change', async (e) => {
+                    const index = e.target.dataset.index;
+                    let action = 'sửa';
+                    let detail = '';
+                    const field = e.target.dataset.field;
+                    const oldValue = tasks[index][field] || '';
+
+                    if (e.target.type === 'checkbox') {
+                        tasks[index].done = e.target.checked;
+                        action = tasks[index].done ? 'hoàn thành' : 'bỏ hoàn thành';
+                        detail = `"${tasks[index].task}"`;
+                    } else {
+                        tasks[index][field] = e.target.value;
+                        detail = `trường "${field}" của công việc "${tasks[index].task}" từ "${oldValue}" thành "${e.target.value}"`;
+                    }
+                    
+                    await saveTasks(tasks);
+                    await logActivity(action, detail);
+                    updateProgress(tasks, celebrationKey, celebrationStatus);
+                });
+            });
+            taskContainer.querySelectorAll('.delete-task-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const index = e.target.dataset.index;
+                    if(confirm(`Bạn có chắc muốn xóa công việc "${tasks[index].task}"?`)) {
+                        handleDeleteTask(index, [...tasks]);
+                    }
+                });
+            });
+            taskContainer.querySelectorAll('.description-input').forEach(textarea => {
+                textarea.style.height = 'auto';
+                textarea.style.height = (textarea.scrollHeight) + 'px';
+                textarea.addEventListener('input', (e) => {
+                    e.target.style.height = 'auto';
+                    e.target.style.height = (e.target.scrollHeight) + 'px';
+                });
+            });
+        }
+
+        async function saveTasks(tasks) {
+            const path = ["tasks", currentUserProfile.employeeId, currentWeekString, currentDay];
+            if(useMock){
+                await mockSetDoc(path, { tasks });
+            } else {
+                const docRef = doc(db, ...path);
+                await setDoc(docRef, { tasks });
+            }
+        }
+        function updateActiveButtonState() {
+            const container = document.querySelector('.view.active');
+            container.querySelectorAll('#day-selector button, #manager-detail-day-selector button').forEach(button => {
+                button.classList.toggle('bg-indigo-600', button.dataset.day === currentDay);
+                button.classList.toggle('text-white', button.dataset.day === currentDay);
+                button.classList.toggle('shadow', button.dataset.day === currentDay);
+                button.classList.toggle('text-gray-600', button.dataset.day !== currentDay);
+                button.classList.toggle('hover:bg-gray-200', button.dataset.day !== currentDay);
+            });
+            const progressLabel = container.querySelector('#progress-label');
+            if(progressLabel) progressLabel.textContent = `Tiến độ ${currentDay}`;
+        }
+        function updateProgress(tasks, celebrationKey, celebrationStatus) {
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            const completedTasks = tasks.filter(task => task.done).length;
+            const totalTasks = tasks.length;
+            const percentage = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+            progressBar.style.width = `${percentage}%`;
+            progressText.textContent = `${percentage}%`;
+            if (percentage === 100) {
+                progressBar.classList.add('bg-amber-400');
+                if (!celebrationStatus[celebrationKey]) {
+                    triggerFireworks();
+                    celebrationStatus[celebrationKey] = true;
+                    localStorage.setItem('celebrations', JSON.stringify(celebrationStatus));
+                }
+            } else if (percentage >= 50) {
+                progressBar.classList.add('bg-green-500');
+            } else {
+                progressBar.classList.remove('bg-green-500', 'bg-amber-400');
+            }
+            document.getElementById('task-table').querySelectorAll('tbody tr').forEach((row, index) => {
+                if(tasks[index]) {
+                   row.querySelector('.task-description')?.classList.toggle('completed-task', tasks[index].done);
+                   row.classList.toggle('bg-green-50', tasks[index].done);
+                }
+            });
+        }
+        function triggerFireworks() {
+            const duration = 5 * 1000;
+            const animationEnd = Date.now() + duration;
+            const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 9999 };
+            function randomInRange(min, max) { return Math.random() * (max - min) + min; }
+            const interval = setInterval(function() {
+                const timeLeft = animationEnd - Date.now();
+                if (timeLeft <= 0) return clearInterval(interval);
+                const particleCount = 50 * (timeLeft / duration);
+                myConfetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
+                myConfetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
+            }, 250);
+        }
+        
+        // --- MANAGER SPECIFIC LOGIC ---
+        async function loadManagerDashboard() {
+            let employeeList = [];
+             if (useMock) {
+                employeeList = Object.values(mockUserDatabase).filter(u => u.role === 'employee');
+            } else {
+                const q = query(collection(db, "users"), where("role", "==", "employee"));
+                const querySnapshot = await getDocs(q);
+                querySnapshot.forEach((doc) => {
+                    employeeList.push(doc.data());
+                });
+            }
+
+            const dashboardContentEl = document.getElementById('dashboard-content');
+            let dashboardHTML = `
+                <table class="w-full text-sm text-left text-gray-600">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-100">
+                        <tr><th class="px-6 py-3">Nhân Viên</th>`;
+            days.forEach(day => { dashboardHTML += `<th class="px-6 py-3 text-center">${day}</th>`; });
+            dashboardHTML += `</tr></thead><tbody id="dashboard-rows">`;
+            employeeList.forEach(emp => {
+                dashboardHTML += `<tr id="dash-row-${emp.employeeId}" class="bg-white border-b dashboard-row"><td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">${emp.name}</td>`;
+                days.forEach(day => { dashboardHTML += `<td id="dash-cell-${emp.employeeId}-${day}" class="px-6 py-4 text-center font-bold text-gray-400">0%</td>`; });
+                dashboardHTML += `</tr>`;
+            });
+            dashboardHTML += `</tbody></table>`;
+            dashboardContentEl.innerHTML = dashboardHTML;
+
+            employeeList.forEach(emp => {
+                document.getElementById(`dash-row-${emp.employeeId}`).addEventListener('click', () => {
+                    showEmployeeDetailView(emp);
+                });
+            });
+            
+            employeeList.forEach(emp => {
+                days.forEach(day => {
+                    const path = ["tasks", emp.employeeId, currentWeekString, day];
+                    if (useMock) {
+                        mockGetDoc(path).then(docSnap => {
+                            const tasks = docSnap.exists() ? docSnap.data().tasks : getInitialPlan()[day];
+                            updateDashboardCell(emp.employeeId, day, tasks);
+                        });
+                    } else {
+                        const docRef = doc(db, ...path);
+                        const unsubscribe = onSnapshot(docRef, (docSnap) => {
+                            const tasks = docSnap.exists() ? docSnap.data().tasks : getInitialPlan()[day];
+                            updateDashboardCell(emp.employeeId, day, tasks);
+                        });
+                        unsubscribes.push(unsubscribe);
+                    }
+                });
+            });
+
+            loadActivityLog();
+        }
+
+        function showEmployeeDetailView(employeeProfile) {
+            const detailViewContainer = document.getElementById('manager-employee-detail-view');
+            detailViewContainer.innerHTML = `
+                <div class="bg-white rounded-2xl shadow-lg p-6 md:p-8">
+                    <div class="flex justify-between items-center mb-6">
+                        <div>
+                           <h1 class="text-2xl font-bold text-gray-800">Chi tiết Checklist - ${employeeProfile.name}</h1>
+                           <p class="text-gray-500">Tuần: ${currentWeekString}</p>
+                        </div>
+                        <button id="back-to-dashboard-btn" class="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600">Quay lại Dashboard</button>
+                    </div>
+                    <div id="manager-detail-day-selector" class="flex flex-wrap gap-2 mb-6 border-b border-gray-200 pb-4"></div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left text-gray-600">
+                           <thead class="text-xs text-gray-700 uppercase bg-gray-100">
+                                <tr>
+                                    <th scope="col" class="px-4 py-3 w-28">Thời gian</th>
+                                    <th scope="col" class="px-4 py-3">Công việc</th>
+                                    <th scope="col" class="px-4 py-3 w-56">Mô tả</th>
+                                    <th scope="col" class="px-4 py-3 w-32">Nền tảng</th>
+                                    <th scope="col" class="px-4 py-3 w-48">Link Bài Đăng</th>
+                                    <th scope="col" class="px-4 py-3 w-24 text-center">Hoàn thành</th>
+                                </tr>
+                            </thead>
+                            <tbody id="manager-detail-task-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+            
+            const daySelectorContainer = detailViewContainer.querySelector('#manager-detail-day-selector');
+            days.forEach(day => {
+                const button = document.createElement('button');
+                button.textContent = day;
+                button.dataset.day = day;
+                button.className = 'px-3 py-2 text-sm font-medium rounded-lg ' + (day === currentDay ? 'bg-indigo-600 text-white' : 'text-gray-600 hover:bg-gray-200');
+                button.addEventListener('click', () => {
+                    currentDay = day;
+                    showEmployeeDetailView(employeeProfile);
+                });
+                daySelectorContainer.appendChild(button);
+            });
+
+            document.getElementById('back-to-dashboard-btn').addEventListener('click', () => {
+                showView('manager-view');
+            });
+            
+            fetchAndRenderTasks(employeeProfile, 'manager-detail');
+            showView('manager-employee-detail-view');
+        }
+
+        async function loadActivityLog() {
+            const logContent = document.getElementById('activity-log-content');
+            if (useMock) {
+                logContent.innerHTML = mockDb.activityLogs.map(log => `<div class="text-sm text-gray-700 p-2 bg-gray-50 rounded-md"><p><span class="font-bold">${log.employeeName}</span> đã ${log.action} ${log.task}.</p><p class="text-xs text-gray-500">${log.day}, ${log.week}</p></div>`).join('') || `<p class="text-gray-500">Chưa có hoạt động nào.</p>`;
+                return;
+            }
+
+            const q = query(collection(db, "activityLogs"), orderBy("timestamp", "desc"), limit(20));
+            onSnapshot(q, (querySnapshot) => {
+                const logs = [];
+                querySnapshot.forEach((doc) => {
+                    logs.push(doc.data());
+                });
+                if (logs.length === 0) {
+                    logContent.innerHTML = `<p class="text-gray-500">Chưa có hoạt động nào.</p>`;
+                } else {
+                    logContent.innerHTML = logs.map(log => {
+                        const time = new Date(log.timestamp).toLocaleString('vi-VN');
+                        return `<div class="text-sm text-gray-700 p-2 bg-gray-50 rounded-md">
+                                    <p><span class="font-bold">${log.employeeName}</span> đã ${log.action} ${log.task}.</p>
+                                    <p class="text-xs text-gray-500">${log.day}, ${log.week} lúc ${time}</p>
+                                </div>`;
+                    }).join('');
+                }
+            });
+        }
+
+        function updateDashboardCell(employeeId, day, tasks) {
+            const cell = document.getElementById(`dash-cell-${employeeId}-${day}`);
+            if (!cell || !tasks) return;
+            const completed = tasks.filter(t => t.done).length;
+            const total = tasks.length;
+            const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+            cell.textContent = `${percentage}%`;
+            cell.classList.remove('text-gray-400', 'text-indigo-600', 'text-green-600', 'text-amber-500');
+            if (percentage === 100) cell.classList.add('text-amber-500');
+            else if (percentage >= 50) cell.classList.add('text-green-600');
+            else if (percentage > 0) cell.classList.add('text-indigo-600');
+            else cell.classList.add('text-gray-400');
+        }
+
+        // --- Initial Load ---
+        document.addEventListener('DOMContentLoaded', () => {
+            setupGlobalEventListeners();
+            updateWeekSelectors(currentWeekString);
+            populateLoginDropdown();
+        });
+    </script>
+</body>
+</html>
